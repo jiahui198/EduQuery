@@ -20,7 +20,6 @@ ARTICLE_RE = re.compile(r"/info/\d+/\d+\.html?$")     #正则表达式，匹配�
 async def _get(client:httpx.AsyncClient,url:str)->str:
     """
     定义网络请求函数，异步进行网络请求，返回网络请求之后得到的html文本
-
     :param client: 异步网络连接
     :param url: 请求url地址
     :return: 网页文本数据
@@ -34,7 +33,6 @@ async def _get(client:httpx.AsyncClient,url:str)->str:
 async def list_article_urls(list_url:str,limit:int=20)->list[str]:
     """
     请求出栏目列表中的内容，使用re块过滤出带有info文本的连接地址
-
     :param list_url:网站url
     :param limit:抓取数量
     :return:info文本地址列表
