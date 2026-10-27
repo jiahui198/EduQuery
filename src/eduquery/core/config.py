@@ -69,6 +69,11 @@ class Settings(BaseSettings):
     MILVUS_TOKEN:str = ""
     MILVUS_COLLECTION:str = "edu_knowledge"
 
+    #JWT鉴权
+    JWT_SECRET:str = "please_change_me" #secret
+    JWT_ALGORITHM:str = "HS256"         #鉴权算法
+    JWT_EXPIRE_MINUTES:int=1440         #token有效时间为24小时
+
 @lru_cache
 def get_settings()->Settings:
     return Settings()

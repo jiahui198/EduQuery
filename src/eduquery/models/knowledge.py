@@ -10,7 +10,7 @@ from eduquery.models.base import Base
 
 class KnowledgeDoc(Base):
     """
-    一篇原始文档 = 一个网页，或一个上传的文件
+    一篇原始文档 = 一个网页，或一个上传的文件,存储文档的原始信息
     """
     __tablename__ = "knowledge_doc"
 

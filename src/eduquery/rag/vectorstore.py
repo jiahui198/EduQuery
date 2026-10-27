@@ -21,6 +21,15 @@ def get_milvus()->MilvusClient:
     return MilvusClient(uri=str(settings.MILVUS_URI))
 
 
+def _ensure_loaded()->None:
+    client = get_milvus()
+    name=settings.MILVUS_COLLECTION
+    if not client.has_collection(collection_name=name):
+        raise RuntimeError(f"Milvus集合不存在：{name}")
+    if client.get_load_state(name)["state"].name !="Loaded":
+        client.load_collection(name)
+
+
 def ensure_collection()->None:
     """
     定义创建结合，集合存在则跳过，不存在就创建集合
@@ -53,6 +62,8 @@ def ensure_collection()->None:
         schema=schema,
         index_params=index_params
     )
+    logger.info("Milvus集合已创建：{}（dim={}）",name,settings.EMBEDDING_DIM)
+
 
 def insert_chunks(rows:list[dict])->list[int]:
     """
@@ -87,6 +98,7 @@ def search(query_vector:list[float],top_k:int=5)->list[dict]:
     :param top_k: 返回结果数量
     :return: list[dict]
     """
+    _ensure_loaded()
     hits = get_milvus().search(
         settings.MILVUS_COLLECTION,
         [query_vector],
