@@ -13,7 +13,7 @@ from eduquery.rag.vectorstore import  ensure_collection
 
 from eduquery.core.exceptions import register_exception_handlers
 
-
+lll
 @asynccontextmanager
 async def lifespan(app:FastAPI):
     """
