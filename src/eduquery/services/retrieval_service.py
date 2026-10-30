@@ -16,7 +16,7 @@ async def retriever(question: str, top_k: int = 5) -> list[dict]:
     :param top_k: 返回结果数量
     :return:检索结果字典列表
     """
-    if not question.strip(question):
+    if not question.strip():
         return []
 
     vector = await embed_query(question)

@@ -6,4 +6,25 @@
 from pydantic import BaseModel,Field
 
 class AskRequest(BaseModel):
+    """
+    用户问题的入参
+    """
     question:str = Field(min_length=1,max_length=1000,description="用户问题")
+
+
+class SourceItem(BaseModel):
+    """
+    定义一个文档内容引用来源数据类型
+    """
+    index:int
+    title:str
+    source_url:str|None = None
+    score:float
+
+
+class AskResponse(BaseModel):
+    question:str
+    answer:str
+    sources:list[SourceItem]=[]
+
+
