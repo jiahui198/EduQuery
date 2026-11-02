@@ -7,6 +7,7 @@ from sqlalchemy import select,delete
 from eduquery.models.knowledge import KnowledgeDoc, KnowledgeChunk
 
 from eduquery.core.db import async_session_maker
+from eduquery.rag import retrievers
 from eduquery.rag import vectorstore as vs
 from eduquery.rag.cleaner import clean_text
 from eduquery.rag.embedder import embed_texts
@@ -109,6 +110,8 @@ async def ingest_url(url:str,category:str|None=None)->dict:
             doc.chunk_count = len(docs)
             doc.status="ready"
             await session.commit()
+            # BM25 是纯内存索引，不重建的话新文章在关键词这一路永远搜不到
+            await retrievers.rebuild_retriever()
             logger.info("入库完成：{}|{}块|doc_id={}",doc.title,len(docs),doc.id)
             return {"doc_id":doc.id,"chunks":len(docs),"skipped":False}
 

@@ -19,13 +19,13 @@ from langchain_classic.retrievers import (
 EnsembleRetriever,              #混合检索器
 ContextualCompressionRetriever  #检索+精排检索器
 )
-from eduquery.core.db import async_sessionmaker
+from eduquery.core.db import async_session_maker
 from sqlalchemy import select
 from eduquery.models.knowledge import  (
 KnowledgeDoc,
 KnowledgeChunk
 )
-from eduquery.rag.embedder import embed_query
+from eduquery.core.llm import get_embedding_model
 from eduquery.rag import vectorstore as vs
 
 
@@ -38,7 +38,7 @@ async def _load_documents()->list[Document]:
     将mysql数据库中存储的文档转换为Document对象并附加元数据doc_id/chunk_index等
     :return: Document对象列表
     """
-    async with async_sessionmaker() as session:
+    async with async_session_maker() as session:
         rows = (await session.execute(
             select(KnowledgeChunk.doc_id,KnowledgeChunk.chunk_index,KnowledgeChunk.content,
                    KnowledgeDoc.title,KnowledgeDoc.source_url)
@@ -70,17 +70,17 @@ class MilvusRetriever(BaseRetriever):
     """
     top_k: int = settings.RETRIEVE_K
 
-    async def _aget_relevant_documents(
-        self, query: str, **kwargs
+    def _search(
+        self, query: str,
     ) -> list[Document]:
         """
-        覆写检索方法，接收一个字符串类型的查询query,并返回一个document对象列表
+        核心检索逻辑接收一个字符串类型的查询query,并返回一个document对象列表
         :param query:用户查询语句
         :return:document对象列表
         """
 
-        vector = await embed_query(text=query)
-        hits = await asyncio.to_thread(vs.search,query_vector=vector,top_k=self.top_k)
+        vector = get_embedding_model().embed_query(query)   # 同步方法，这里不能 await
+        hits = vs.search(query_vector=vector,top_k=self.top_k)
         return [
             Document(
                 page_content=h["text"],
@@ -91,6 +91,18 @@ class MilvusRetriever(BaseRetriever):
             )
             for h in hits
         ]
+    #定义同步invoke
+    def _get_relevant_documents(
+        self, query: str,**kwargs
+    ) -> list[Document]:
+        return self._search(query)
+
+    #定义异步ainvoke
+    async def _aget_relevant_documents(
+        self, query: str,**kwargs
+    ) -> list[Document]:
+        return await asyncio.to_thread(self._search, query)   # 传函数+参数，别写成 _search(query)
+
 
 def build_hybrid_retriever(
         chunks:list[Document],
@@ -105,7 +117,7 @@ def build_hybrid_retriever(
     :return:混合检索器
     """
     if weights is None:
-        weights = [0.5,0.5]
+        weights = [settings.BM25_WEIGHT,settings.DENSE_WEIGHT]
 
     if k is None:
         k= settings.RETRIEVE_K
@@ -136,7 +148,7 @@ def build_rerank(top_n:int|None=None)->DashScopeRerank:
     return DashScopeRerank(
         client=dashscope.TextReRank,
         model = RERANK_MODEL,
-        dascscope_api_key = settings.DASHSCOPE_API_KEY,
+        dashscope_api_key = settings.DASHSCOPE_API_KEY,
         top_n = top_n
     )
 
@@ -151,7 +163,7 @@ def builder_retriever_with_rerank(
 
 
 async def rebuild_retriever() -> None:
-    """对应 demo2 的 build_index()：重建单例。入库后必须调，否则新文章搜不到"""
+    """重建单例。入库后必须调，否则新文章搜不到"""
     global _retriever
     chunks = await _load_documents()
     if not chunks:
