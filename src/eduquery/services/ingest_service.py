@@ -58,6 +58,7 @@ async def ingest_url(url:str,category:str|None=None)->dict:
             await session.commit()
             await session.refresh(doc)      #手动更新表
 
+        #存入KnowledgeDoc后接着存入KnowledgeChunk表中
         try:
             doc.status = "processing"
             await session.commit()

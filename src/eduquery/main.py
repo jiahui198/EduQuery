@@ -64,8 +64,6 @@ def create_app()->FastAPI:
 
 app = create_app()
 
-async def
-    sss
 
 
 

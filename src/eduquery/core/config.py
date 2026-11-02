@@ -50,6 +50,14 @@ class Settings(BaseSettings):
     MYSQL_MAX_OVERFLOW:int=20       #连接池最大溢出数
     MYSQL_ECHO:bool = False         #不打印数据库日志
 
+    #RAG检索配置
+    RETRIEVE_K:int = 10         #每路粗召回条数
+    RERANK_TOP_N:int = 4        #重排后保留条数
+    BM25_WEIGHT:float = 0.5     #关键词检索（稀疏检索）权重
+    DENSE_WEIGHT:float = 0.5    #向量检索（稠密检索）权重
+    RRF_C:int = 60              #RRF平滑常数
+    RERANK_MIN_SCORE:float = 0.05
+
     @property
     def mysql_dsn(self)->str:
         return(
