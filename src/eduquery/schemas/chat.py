@@ -28,3 +28,9 @@ class AskResponse(BaseModel):
     sources:list[SourceItem]=[]
 
 
+class RouteResult(BaseModel):
+    """
+    路由判断模型
+    """
+    need_rag:bool = Field(description="是否需要查询学校知识库才能回答")
+    reason:str = Field(description="说明判断依据")
