@@ -58,6 +58,10 @@ class Settings(BaseSettings):
     RRF_C:int = 60              #RRF平滑常数
     RERANK_MIN_SCORE:float = 0.05
 
+    #多轮对话历史
+    HISTORY_TURNS:int=6         #单次对话历史携带进入llm的条数
+    COMPRESS_TRIGGER:int = 20   #未压缩消息超过此对话条数就进行触发压缩
+
     @property
     def mysql_dsn(self)->str:
         return(

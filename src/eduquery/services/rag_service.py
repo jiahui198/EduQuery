@@ -6,7 +6,6 @@ from collections.abc import AsyncIterator
 
 from loguru import logger
 
-from langchain_core.messages import SystemMessage,HumanMessage
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate
 from eduquery.schemas.chat import AskResponse, SourceItem
