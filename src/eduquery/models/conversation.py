@@ -22,6 +22,7 @@ class Conversation(Base):
 
     #会话上下文压缩，存储会话内的浓缩摘要
     context_summary:Mapped[str|None] = mapped_column(Text,nullable=True)
+    #记录压缩到历史消息列表的哪一条了
     compressed_until: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     created_at:Mapped[datetime] = mapped_column(
