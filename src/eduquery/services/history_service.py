@@ -14,16 +14,13 @@ from langchain_core.output_parsers import StrOutputParser
 
 
 SUMMARY_PROMPT = """你是高校问答系统的对话摘要助手。
-把【已有摘要】和【更早对话】合并成一段不超过200字的摘要。
+把【已有摘要】和本轮【更早对话】合并成一段不超过200字的中文摘要。
 只保留事实：学生问过什么、答过什么、涉及哪些政策/时间/金额/流程。
-不要客套话，不要编号，不要加入资料里没有的内容"
+不要客套话，不要编号，不要加入资料里没有的内容。
 
 【已有摘要】
-{old_summary}
+{old_summary}"""
 
-【更早对话】
-{dialogue}
-"""
 
 async def load_history(db:AsyncSession,conversation_id:int)->list[dict]:
     """
@@ -47,7 +44,7 @@ async def load_history(db:AsyncSession,conversation_id:int)->list[dict]:
     )
     if conv.context_summary:
         history.append({"role":"system","content":f"更早对话的摘要{conv.context_summary}"})
-    history +=[{"role":m.role} for m in msgs]
+    history +=[{"role":m.role,"content":m.content} for m in msgs]
     return history
 
 
@@ -80,7 +77,7 @@ async def maybe_compress(db:AsyncSession,conversation_id:int)->None:
         return
 
     #取出所有未被摘要压缩的消息列表,消息列表按照升序排序
-    stmt = select(Message).where(conversation_id==conversation_id,Message.id>after).order_by(Message.id.asc())
+    stmt = select(Message).where(Message.conversation_id==conversation_id,Message.id>after).order_by(Message.id.asc())
     rows = (await db.execute(stmt)).scalars().all()
 
     keep = settings.HISTORY_TURNS*2
@@ -110,7 +107,6 @@ async def maybe_compress(db:AsyncSession,conversation_id:int)->None:
     await conversation_service.append_context_summary(db=db,conversation_id=conversation_id,summary=summary,compressed_until=to_compress[-1].id)
 
 
-、、
 
 
 

@@ -10,7 +10,7 @@ class AskRequest(BaseModel):
     用户问题的入参
     """
     question:str = Field(min_length=1,max_length=1000,description="用户问题")
-
+    conversation_id:int|None = Field(default=None,description="会话id，不传则自动新建会话")
 
 class SourceItem(BaseModel):
     """
@@ -26,6 +26,7 @@ class AskResponse(BaseModel):
     question:str
     answer:str
     sources:list[SourceItem]=[]
+    conversation_id:int
 
 
 class RouteResult(BaseModel):

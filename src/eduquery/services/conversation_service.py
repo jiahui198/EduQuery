@@ -86,7 +86,7 @@ async def append_message(db:AsyncSession,conversation_id:int,student_id:int,
     :param token_count:token话费
     :return:Message
     """
-    conv = get_conversation(db,student_id,conversation_id)
+    conv = await get_conversation(db,student_id,conversation_id)
     if conv is None:
         raise NotFoundError("会话未找到")
 
@@ -119,7 +119,7 @@ async def list_messages(db:AsyncSession,conversation_id:int,
     """
     stmt = (
         select(Message)
-        .where(conversation_id==conversation_id)
+        .where(Message.conversation_id==conversation_id)
         #根据id从下到上升序
         .order_by(Message.id.asc())
         .limit(limit)
@@ -157,7 +157,7 @@ async def append_context_summary(db:AsyncSession,conversation_id:int,
     """
     await db.execute(
         update(Conversation)
-        .where(conversation_id==conversation_id)
+        .where(Conversation.id==conversation_id)
         .values(context_summary=summary,compressed_until=compressed_until,updated_at=func.now())
     )
     await db.commit()
@@ -171,10 +171,9 @@ async def delete_conversation(db:AsyncSession,student_id:int,conversation_id:int
     :param student_id:学生id
     :param conversation_id:会话id
     """
-    conv = await get_conversation(db,conversation_id,student_id)
+    conv = await get_conversation(db,student_id,conversation_id)
     await db.delete(conv)
     await db.commit()
-    await db.refresh(conv)
     logger.info("已删除会话{}",conversation_id)
 
 

@@ -7,12 +7,19 @@ from collections.abc import AsyncIterator
 from loguru import logger
 
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder#可变插槽模版
 from eduquery.schemas.chat import AskResponse, SourceItem
 from eduquery.services.retrieval_service import hybrid_retriever,build_context
 from eduquery.core.llm import get_chat_model
 from eduquery.core.exceptions import LLMError
 from eduquery.services import router_service
+from sqlalchemy.ext.asyncio import AsyncSession
+from eduquery.services import (
+    history_service,
+    conversation_service,
+    router_service,
+    retrieval_service
+)
 
 
 #系统提示词，适用于需要查询校园知识库的情况
@@ -33,60 +40,111 @@ def build_prompt()->ChatPromptTemplate:
     return ChatPromptTemplate.from_messages(
         [
             ("system",SYSTEM_PROMPT),
+            MessagesPlaceholder("history"),     #新增可变插槽模版
             ("human","【参考资料】\n{context}\n\n【用户问题】\n{question}")
         ]
     )
 
 
-async def answer(question:str,top_k:int=5)->AskResponse:
+def build_general_prompt()->ChatPromptTemplate:
     """
-    用于设计rag回答问题的主函数,同步函数，不能流式输出
+    定义寒暄提示词
+    """
+    return ChatPromptTemplate.from_messages(
+        [
+            ("system",GENERAL_PROMPT),
+            MessagesPlaceholder("history"),
+            ("human","{question}")
+        ]
+    )
 
-    :param question: 用户输入的问题
-    :param top_k:检索文档数量默认为前五个
-    :return:
+
+async def answer(question:str,db:AsyncSession,conversation_id:int,
+                 student_id:int,top_k:int=5)->AskResponse:
     """
-    #1.进行路由判断逻辑，不需要查询校园知识库
+    重新定义问答函数
+
+    :param question: 用户问题
+    :param db: 数据库连接session
+    :param conversation_id: 会话id
+    :param student_id: 学生id
+    :param top_k:返回结果数量
+    :return:AskResponse
+    """
+    #1.读取历史最近摘要和会话内最近前12条消息
+    history = await history_service.load_history(db,conversation_id)
+    #2.将用户提问消息落库
+    await conversation_service.append_message(
+        db=db,
+        conversation_id=conversation_id,
+        student_id=student_id,
+        role="user",
+        content=question,
+        citations=[]
+    )
+    #3.路由：将用户提问进行路由，判断是否需要向量数据库
     route = await router_service.route_question(question=question)
+    #4.1判断不需要调用向量数据库:回答->落库->判断是否需要摘要
     if not route.need_rag:
-        chain = ChatPromptTemplate.from_messages(
-            [
-                ("system",GENERAL_PROMPT),
-                ("human","{question}")
-            ]
-        ) | get_chat_model(temperature=0.3) | StrOutputParser()
-
-        result = await chain.ainvoke({"question": question})
+        chain = build_general_prompt() | get_chat_model(temperature=0.3) | StrOutputParser()
+        try:
+            reply = (await chain.ainvoke({"question":question,"history":history})).strip()
+        except Exception as exc:
+            logger.exception("调用大模型失败")
+            raise LLMError() from exc
+        await conversation_service.append_message(
+            db=db,
+            conversation_id=conversation_id,
+            student_id=student_id,
+            role="assistant",
+            citations=[],
+            content=reply
+        )
+        await history_service.maybe_compress(db,conversation_id)
         return AskResponse(
             question=question,
-            answer = result.strip()
+            answer=reply,
+            conversation_id=conversation_id
         )
 
-    #2.进行路由判断，需要查询校园知识库
-    #返回检索到的结果列表（混合检索：BM25 + 向量 + RRF 融合 + rerank 精排）
-    hits = await hybrid_retriever(question=question,top_k=top_k)
-
+    #4.2判断需要检索逻辑
+    hits = retrieval_service.hybrid_retriever(question=question,top_k=top_k)
     if not hits:
+        reply = "抱歉，知识库里没有相关文档"
+        await conversation_service.append_message(
+            db=db,
+            conversation_id=conversation_id,
+            student_id=student_id,
+            role="assistant",
+            content=reply,
+            citations=[],
+        )
+        await history_service.maybe_compress(db,conversation_id)
         return AskResponse(
             question=question,
-            answer="抱歉，知识库里没有相关资料"
+            conversation_id=conversation_id,
         )
-
-    context,sources = build_context(hits=hits)
-    # from_messages 只收一个列表；直接复用 build_prompt()，跟流式那条链保持同一段提示词
-    prompt = build_prompt()
-    chain = prompt | get_chat_model() | StrOutputParser()
     try:
-        reply = await chain.ainvoke({"question":question,"context":context})
+        context,sources = retrieval_service.build_context(hits=hits)
+        chain = build_prompt() | get_chat_model | StrOutputParser()
+        reply = (await chain.ainvoke({"context":context,"question":question})).strip()
     except Exception as exc:
         logger.exception("调用大模型失败")
         raise LLMError() from exc
-
+    #处理文档元数据
+    source_items = [SourceItem(**s) for s in sources]
+    await conversation_service.append_message(
+        db, conversation_id, student_id, "assistant", reply,
+        citations=[s.model_dump() for s in source_items]
+    )
+    await history_service.maybe_compress(db,conversation_id)
     return AskResponse(
         question=question,
-        answer = reply.strip(),          # 同上：链的输出是 str，不是 AIMessage
-        sources=[SourceItem(**s) for s in sources]
+        answer=reply,
+        sources=source_items,
+        conversation_id=conversation_id
     )
+
 
 
 """
