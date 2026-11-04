@@ -209,4 +209,3 @@ async def stream_answer(question:str,top_k:int=5)->AsyncIterator[str]:
         yield _sse("error",{"code":"LLM_ERROR","message":"AI服务暂时不可用，请稍后再试"})
 
     yield _sse("done",{})
-。。。。
