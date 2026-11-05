@@ -9,10 +9,8 @@ from loguru import logger
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder#可变插槽模版
 from eduquery.schemas.chat import AskResponse, SourceItem
-from eduquery.services.retrieval_service import hybrid_retriever,build_context
 from eduquery.core.llm import get_chat_model
 from eduquery.core.exceptions import LLMError
-from eduquery.services import router_service
 from sqlalchemy.ext.asyncio import AsyncSession
 from eduquery.services import (
     history_service,
@@ -20,6 +18,7 @@ from eduquery.services import (
     router_service,
     retrieval_service
 )
+from eduquery.core.db import async_session_maker
 
 
 #系统提示词，适用于需要查询校园知识库的情况
@@ -159,54 +158,107 @@ def _sse(event:str,data:dict)->str:
     return f"event:{event}\ndata:{json.dumps(data,ensure_ascii=False)}\n\n"
 
 
-async def stream_answer(question:str,top_k:int=5)->AsyncIterator[str]:
+async def stream_answer(question:str,conversation_id:int,student_id:int,
+                        top_k:int=5)->AsyncIterator[str]:
     """
-    设计SSE流式输出功能
-    :param question:用户问题
-    :param top_k: 返回结果数量
-    :return: AsyncIterator
+    用于设计SSE的流式输出
+    :param question: 用户问题question
+    :param conversation_id: 会话id
+    :param student_id:学生id
+    :param top_k :返回结果数量
+    :return:AsyncIterator
     """
-    #1.判断是否需要我们的校园知识库，不需要则直接调用模型回答问题流式输出
-    route = await router_service.route_question(question=question)
-    if not route.need_rag:
-        yield _sse("sources",{"sources":[]})
-        chain = ChatPromptTemplate.from_messages(
-            [("system",GENERAL_PROMPT),
-             ("human","{question}")
-             ]
-        ) | get_chat_model(temperature=0.3) | StrOutputParser()
-        try:
-            async for chunk in chain.astream({"question":question}):
-                if chunk:
-                    yield _sse("answer",{"text":chunk})
-        except Exception as exc:
-            logger.exception("通用流式回答生成失败")
-            yield _sse("error",{"code":"LLM_ERROR","message":"AI服务暂时不可用，请稍后再试"})
-        # 必须 done + return：否则会掉进下面的检索分支，寒暄也被拉去跑一遍向量+rerank
-        yield _sse("done",{})
-        return
+    async with async_session_maker as db:
+        history = await history_service.load_history(db,conversation_id)
+        await conversation_service.append_message(
+            db=db,
+            conversation_id=conversation_id,
+            student_id=student_id,
+            role="user",
+            content=question,
+            citations=[]
+        )
+        yield _sse("meta",{"conversation_id":conversation_id})
+
+        #1.路由判断，需不需要进行检索逻辑
+        route = await router_service.route_question(question=question)
+        #2.不需要路由检索直接让模型输出的情况
+        if not route.need_rag:
+            yield _sse("sources",{"sources":[]})
+            chain = build_general_prompt() | get_chat_model(temperature=0.3) | StrOutputParser()
+            parts:list[str] = []
+            try:
+                async for chunk in chain.astream({"question":question,"history":history}):
+                    if chunk:
+                        parts.append(chunk)
+                        yield _sse("answer",{"text":chunk})
+            except Exception:
+                logger.exception("同用流式回答生成失败")
+                yield _sse("error",{"code":"LLM_ERROR","message":"AI服务暂时不可用，请稍后再试"})
+            reply = "".join(parts).strip()
+            if reply:
+                await conversation_service.append_message(
+                    db=db,
+                    conversation_id=conversation_id,
+                    student_id=student_id,
+                    role="assistant",
+                    content=reply,
+                    citations=[]
+                )
+                await history_service.maybe_compress(db,conversation_id)
+            yield _sse("done",{})
+            return
 
 
-    #2.路由判断后需要我们的校园知识库
-    hits = await hybrid_retriever(question=question,top_k=top_k)
-    if not hits:
-        yield _sse("answer",{"text":"抱歉，知识库里没有相关资料"})
-        yield _sse("done",{})
-        return
+        #3.路由判断之后，需要检索的情况
+        hits = await retrieval_service.hybrid_retriever(question=question,top_k=top_k)
+        if not hits:
+            reply = "抱歉，知识库里没有相关资料"
+            yield _sse("answer",{"text":reply})
+            await conversation_service.append_message(
+                db=db,
+                conversation_id=conversation_id,
+                student_id=student_id,
+                role="assistant",
+                content=reply,
+                citations=[]
+            )
+            await history_service.maybe_compress(db=db,conversation_id=conversation_id)
+            yield _sse("done",{})
+            return
+        if hits:
+            context,sources = retrieval_service.build_context(hits)
+            source_items = [SourceItem(**s) for s in sources]
+            yield _sse("sources", {"sources": [s.model_dump() for s in source_items]})
 
-    context,sources = build_context(hits=hits)
-    # model_dump() 必须有：SourceItem 是 pydantic 对象，json.dumps 不认识，会报 TypeError
-    yield _sse("sources",{"sources":[SourceItem(**s).model_dump() for s in sources]})
+            chain = build_prompt() | get_chat_model(temperature=0.1) | StrOutputParser()
+            parts =[]
+            try:
+                async for chunk in chain.astream(
+                        {"context": context, "question": question, "history": history}
+                ):
+                    if chunk:
+                        parts.append(chunk)
+                        yield _sse("answer",{"text":chunk})
+            except Exception:
+                logger.exception("流式生成失败")
+                yield _sse("error",{"code":"LLM_ERROR","message":"AI服务暂时不可用，请稍后再试"})
+            reply = "".join(parts).strip()
+            if reply:
+                await conversation_service.append_message(
+                    db,conversation_id,student_id,"assistant",reply,
+                citations = [s.model_dump() for s in source_items])
+                await history_service.maybe_compress(db, conversation_id)
+                yield _sse("done", {})
 
-    #定义LCEL主链路
-    chain = build_prompt() | get_chat_model(temperature=0.1) | StrOutputParser()
-    try:
-        async for chunk in chain.astream({"context":context,"question":question}):
-            if chunk:
-                yield _sse("answer",{"text":chunk})
-    except Exception as exc:
-        logger.exception("流式生成失败")
-        yield _sse("error",{"code":"LLM_ERROR","message":"AI服务暂时不可用，请稍后再试"})
 
-    yield _sse("done",{})
-。。。
+
+
+
+
+
+
+
+
+
+
