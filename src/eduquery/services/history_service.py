@@ -48,7 +48,7 @@ async def load_history(db:AsyncSession,conversation_id:int)->list[dict]:
     return history
 
 
-async def count_uncompressed(db:AsyncSession,conversation_id:int,after_id:int)->int:
+async def _count_uncompressed(db:AsyncSession,conversation_id:int,after_id:int)->int:
     """
     设计用于统计还有多少条未被压缩的消息条数，id>compressed_until(after_id)
     :param conversation_id:会话id
@@ -73,7 +73,7 @@ async def maybe_compress(db:AsyncSession,conversation_id:int)->None:
     after = conv.compressed_until or 0
 
     #判断未压缩摘要条数是否小于触发摘要阈值
-    if await count_uncompressed(db=db,conversation_id=conversation_id,after_id=after)<=settings.COMPRESS_TRIGGER:
+    if await _count_uncompressed(db=db,conversation_id=conversation_id,after_id=after)<=settings.COMPRESS_TRIGGER:
         return
 
     #取出所有未被摘要压缩的消息列表,消息列表按照升序排序
