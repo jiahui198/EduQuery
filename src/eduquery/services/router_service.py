@@ -14,7 +14,7 @@ from eduquery.core.llm import get_chat_model
 SMALL_TALK =re.compile(r"^(你好|您好|hi|hello|谢谢|感谢|再见|bye|你是谁|你能干什么)", re.I)
 SCHOOL_HINT = ("章程", "奖学金", "处分", "报名", "通知",
                "学分", "选课", "毕业","活动","新闻","招生",
-               "考试","学院","信息","公告")
+               "考试","学院","信息","公告","比赛","大赛","通知","报名","截止")
 
 
 def _rule_route(question:str)->RouteResult|None:
@@ -47,7 +47,9 @@ async def route_question(question:str)->RouteResult:
     llm = get_chat_model(temperature=0).with_structured_output(RouteResult)
     result = await llm.ainvoke(
         [
-            SystemMessage("判断这个问题是否必须需要查询校园知识库才能回答，校园知识库中包含学校通知、公告、章程、校规等学校内容。如果需要校园知识库返回True；不需要返回False。最后并输出判断原因"),
+            SystemMessage("判断这个问题是否必须需要查询校园知识库才能回答，校园知识库中包含学校通知、公告、章程、校规等学校内容。"
+                          "另外凡涉及校内发布的比赛、通知、报名安排，即使该信息在公开渠道可能存在，也必须查询校园知识库"
+                          "如果需要校园知识库返回True；不需要返回False。最后并输出判断原因"),
             HumanMessage(question)
         ]
     )

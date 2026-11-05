@@ -107,7 +107,7 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
         )
 
     #4.2判断需要检索逻辑
-    hits = retrieval_service.hybrid_retriever(question=question,top_k=top_k)
+    hits = await retrieval_service.hybrid_retriever(question=question,top_k=top_k)
     if not hits:
         reply = "抱歉，知识库里没有相关文档"
         await conversation_service.append_message(
@@ -122,11 +122,12 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
         return AskResponse(
             question=question,
             conversation_id=conversation_id,
+            answer = reply
         )
     try:
         context,sources = retrieval_service.build_context(hits=hits)
-        chain = build_prompt() | get_chat_model | StrOutputParser()
-        reply = (await chain.ainvoke({"context":context,"question":question})).strip()
+        chain = build_prompt() | get_chat_model() | StrOutputParser()
+        reply = (await chain.ainvoke({"context":context,"question":question,"history":history})).strip()
     except Exception as exc:
         logger.exception("调用大模型失败")
         raise LLMError() from exc
@@ -168,7 +169,7 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
     :param top_k :返回结果数量
     :return:AsyncIterator
     """
-    async with async_session_maker as db:
+    async with async_session_maker() as db:
         history = await history_service.load_history(db,conversation_id)
         await conversation_service.append_message(
             db=db,
@@ -246,10 +247,9 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
             reply = "".join(parts).strip()
             if reply:
                 await conversation_service.append_message(
-                    db,conversation_id,student_id,"assistant",reply,
-                citations = [s.model_dump() for s in source_items])
+                    db,conversation_id,student_id,"assistant",reply,citations = [s.model_dump() for s in source_items])
                 await history_service.maybe_compress(db, conversation_id)
-                yield _sse("done", {})
+            yield _sse("done", {})
 
 
 

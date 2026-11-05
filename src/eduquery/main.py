@@ -4,7 +4,7 @@ from fastapi import FastAPI
 from eduquery.core.logging import setup_logging
 from loguru import logger
 from eduquery.core.config import settings
-from eduquery.api.v1 import health,auth,chat
+from eduquery.api.v1 import health,auth,chat,conversations
 from fastapi.middleware.cors import CORSMiddleware
 
 from eduquery.core.db import init_db,close_db
@@ -60,6 +60,7 @@ def create_app()->FastAPI:
     app.include_router(health.router,prefix=settings.API_V1_PREFIX,tags=["health"])
     app.include_router(auth.router,prefix=settings.API_V1_PREFIX)
     app.include_router(chat.router,prefix=settings.API_V1_PREFIX)
+    app.include_router(conversations.router,prefix=settings.API_V1_PREFIX)
     return app
 
 app = create_app()

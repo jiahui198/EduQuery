@@ -43,6 +43,7 @@ async def get_current_user(
         raise PermissionDeniedError("账号已被封禁")
     return user
 
+
 async def get_current_admin(
         token:str = Depends(oauth2_schema),
         db:AsyncSession = Depends(get_db)
