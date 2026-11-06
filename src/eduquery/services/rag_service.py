@@ -16,7 +16,8 @@ from eduquery.services import (
     history_service,
     conversation_service,
     router_service,
-    retrieval_service
+    retrieval_service,
+    memory_service
 )
 from eduquery.core.db import async_session_maker
 
@@ -35,23 +36,30 @@ GENERAL_PROMPT = ("你是高校知识库问答助手。当前问题不需要查�
                   "请用你的通用已有知识回答，中文、简洁。不要编造学校的具体规定")
 
 
-def build_prompt()->ChatPromptTemplate:
+def build_prompt(memory_block:str="")->ChatPromptTemplate:
+
+    #改写：添加长期记忆提示词
+    system_text = SYSTEM_PROMPT if not memory_block else SYSTEM_PROMPT+"\n"+memory_block
+
     return ChatPromptTemplate.from_messages(
         [
-            ("system",SYSTEM_PROMPT),
+            ("system",system_text),
             MessagesPlaceholder("history"),     #新增可变插槽模版
             ("human","【参考资料】\n{context}\n\n【用户问题】\n{question}")
         ]
     )
 
 
-def build_general_prompt()->ChatPromptTemplate:
+def build_general_prompt(memory_block:str="")->ChatPromptTemplate:
     """
     定义寒暄提示词
     """
+    #改写：添加长期记忆提示词
+    system_text = GENERAL_PROMPT if not memory_block else GENERAL_PROMPT+"\n"+memory_block
+
     return ChatPromptTemplate.from_messages(
         [
-            ("system",GENERAL_PROMPT),
+            ("system",system_text),
             MessagesPlaceholder("history"),
             ("human","{question}")
         ]
@@ -72,6 +80,16 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
     """
     #1.读取历史最近摘要和会话内最近前12条消息
     history = await history_service.load_history(db,conversation_id)
+
+    #新增：读取该生的长期对话消息
+    raw_memories = await memory_service.load_memories(
+        db=db,
+        student_id=student_id
+    )
+    memory_block = await memory_service.format_memory_block(
+        memories=raw_memories
+    )
+
     #2.将用户提问消息落库
     await conversation_service.append_message(
         db=db,
@@ -85,7 +103,7 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
     route = await router_service.route_question(question=question)
     #4.1判断不需要调用向量数据库:回答->落库->判断是否需要摘要
     if not route.need_rag:
-        chain = build_general_prompt() | get_chat_model(temperature=0.3) | StrOutputParser()
+        chain = build_general_prompt(memory_block=memory_block) | get_chat_model(temperature=0.3) | StrOutputParser()
         try:
             reply = (await chain.ainvoke({"question":question,"history":history})).strip()
         except Exception as exc:
@@ -99,6 +117,15 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
             citations=[],
             content=reply
         )
+
+        #根据本次问题提取长期记忆，并将记忆落库
+        await memory_service.extract_memories(
+            db=db,
+            student_id=student_id,
+            conversation_id=conversation_id,
+            question=question
+        )
+
         await history_service.maybe_compress(db,conversation_id)
         return AskResponse(
             question=question,
@@ -118,6 +145,13 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
             content=reply,
             citations=[],
         )
+
+        await memory_service.extract_memories(
+            db=db,
+            student_id=student_id,
+            conversation_id=conversation_id,
+            question=question
+        )
         await history_service.maybe_compress(db,conversation_id)
         return AskResponse(
             question=question,
@@ -126,7 +160,7 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
         )
     try:
         context,sources = retrieval_service.build_context(hits=hits)
-        chain = build_prompt() | get_chat_model() | StrOutputParser()
+        chain = build_prompt(memory_block=memory_block) | get_chat_model() | StrOutputParser()
         reply = (await chain.ainvoke({"context":context,"question":question,"history":history})).strip()
     except Exception as exc:
         logger.exception("调用大模型失败")
@@ -137,6 +171,12 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
         db, conversation_id, student_id, "assistant", reply,
         citations=[s.model_dump() for s in source_items]
     )
+    await memory_service.extract_memories(
+        db=db,
+        student_id=student_id,
+        conversation_id=conversation_id,
+        question=question
+    )
     await history_service.maybe_compress(db,conversation_id)
     return AskResponse(
         question=question,
@@ -144,7 +184,6 @@ async def answer(question:str,db:AsyncSession,conversation_id:int,
         sources=source_items,
         conversation_id=conversation_id
     )
-
 
 
 """
@@ -170,6 +209,9 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
     :return:AsyncIterator
     """
     async with async_session_maker() as db:
+        raw_memories = await memory_service.load_memories(db,student_id)
+        memories_block = await memory_service.format_memory_block(memories=raw_memories)
+
         history = await history_service.load_history(db,conversation_id)
         await conversation_service.append_message(
             db=db,
@@ -186,7 +228,7 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
         #2.不需要路由检索直接让模型输出的情况
         if not route.need_rag:
             yield _sse("sources",{"sources":[]})
-            chain = build_general_prompt() | get_chat_model(temperature=0.3) | StrOutputParser()
+            chain = build_general_prompt(memory_block=memories_block) | get_chat_model(temperature=0.3) | StrOutputParser()
             parts:list[str] = []
             try:
                 async for chunk in chain.astream({"question":question,"history":history}):
@@ -206,6 +248,12 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
                     content=reply,
                     citations=[]
                 )
+                await memory_service.extract_memories(
+                    db=db,
+                    student_id=student_id,
+                    conversation_id=conversation_id,
+                    question=question
+                )
                 await history_service.maybe_compress(db,conversation_id)
             yield _sse("done",{})
             return
@@ -224,6 +272,12 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
                 content=reply,
                 citations=[]
             )
+            await memory_service.extract_memories(
+                db=db,
+                student_id=student_id,
+                conversation_id=conversation_id,
+                question=question
+            )
             await history_service.maybe_compress(db=db,conversation_id=conversation_id)
             yield _sse("done",{})
             return
@@ -232,7 +286,7 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
             source_items = [SourceItem(**s) for s in sources]
             yield _sse("sources", {"sources": [s.model_dump() for s in source_items]})
 
-            chain = build_prompt() | get_chat_model(temperature=0.1) | StrOutputParser()
+            chain = build_prompt(memory_block=memories_block) | get_chat_model(temperature=0.1) | StrOutputParser()
             parts =[]
             try:
                 async for chunk in chain.astream(
@@ -248,6 +302,12 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
             if reply:
                 await conversation_service.append_message(
                     db,conversation_id,student_id,"assistant",reply,citations = [s.model_dump() for s in source_items])
+                await memory_service.extract_memories(
+                    db=db,
+                    student_id=student_id,
+                    conversation_id=conversation_id,
+                    question=question
+                )
                 await history_service.maybe_compress(db, conversation_id)
             yield _sse("done", {})
 

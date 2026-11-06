@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     HISTORY_TURNS:int=6         #单次对话历史携带进入llm的条数
     COMPRESS_TRIGGER:int = 20   #未压缩消息超过此对话条数就进行触发压缩
 
+    #长期记忆
+    MEMORY_MAX_ITEMS:int =8         #注入prompt记忆条数上限
+    MEMORY_RECENT_FOR_DEDUP:int =8  #提取时给llm看的已有记忆条数
+
     @property
     def mysql_dsn(self)->str:
         return(

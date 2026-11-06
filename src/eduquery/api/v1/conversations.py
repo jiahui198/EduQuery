@@ -26,7 +26,7 @@ router = APIRouter(prefix="/conversations",tags=["conversation"])
 
 @router.post("",response_model=ConversationOut)
 async def create_conversation(
-        data:ConversationCreate,
+        data:ConversationCreate|None=None,
         db:AsyncSession=Depends(get_db),
         current_user:User=Depends(get_current_user)
 )->ConversationOut:
@@ -58,7 +58,7 @@ async def list_conversations(
     :param current_user:依赖注入用户基本信息
     :return:list[ConversationOut]
     """
-    rows = conversation_service.list_conversation(
+    rows = await conversation_service.list_conversation(
         db=db,
         student_id=current_user.id,
         limit=limit,
