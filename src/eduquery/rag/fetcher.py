@@ -12,7 +12,6 @@ from urllib.parse import urljoin
 from bs4 import BeautifulSoup
 
 
-BASE = "https://www.zzuit.edu.cn"
 HEADERS = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}    #爬取请求头
 ARTICLE_RE = re.compile(r"/info/\d+/\d+\.html?$")     #正则表达式，匹配网站上面的info连接
 
