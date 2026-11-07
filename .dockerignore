@@ -1,0 +1,13 @@
+.venv
+.git
+.idea
+.ruff_cache
+__pycache__
+*.py[oc]
+logs
+data
+tests
+.env
+*.sql
+*.tar.gz
+README.md
