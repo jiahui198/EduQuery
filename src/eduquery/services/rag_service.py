@@ -8,6 +8,7 @@ from loguru import logger
 
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder#可变插槽模版
+
 from eduquery.schemas.chat import AskResponse, SourceItem
 from eduquery.core.llm import get_chat_model
 from eduquery.core.exceptions import LLMError
@@ -310,10 +311,6 @@ async def stream_answer(question:str,conversation_id:int,student_id:int,
                 )
                 await history_service.maybe_compress(db, conversation_id)
             yield _sse("done", {})
-
-
-
-
 
 
 

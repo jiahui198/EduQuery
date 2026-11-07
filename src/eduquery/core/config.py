@@ -66,6 +66,11 @@ class Settings(BaseSettings):
     MEMORY_MAX_ITEMS:int =8         #注入prompt记忆条数上限
     MEMORY_RECENT_FOR_DEDUP:int =8  #提取时给llm看的已有记忆条数
 
+    #上传文件配置
+    UPLOAD_DIR:Path=BASE_DIR/"data"/"uploads"   #上传文件落盘目录
+    UPLOAD_MAX_MB:int = 20                      #单个文件上传大小限制
+    UPLOAD_ALLOWED_EXT: set[str] = {".pdf", ".docx", ".txt", ".md", ".markdown"}    #可上传的文件格式
+
     @property
     def mysql_dsn(self)->str:
         return(
