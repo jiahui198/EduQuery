@@ -1,6 +1,9 @@
 import asyncio
 from contextlib import asynccontextmanager
+from pathlib import Path
+
 from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
 from eduquery.core.logging import setup_logging
 from loguru import logger
 from eduquery.core.config import settings
@@ -12,6 +15,10 @@ from eduquery.core.redis import get_redis,close_redis
 from eduquery.rag.vectorstore import  ensure_collection
 
 from eduquery.core.exceptions import register_exception_handlers
+
+
+#前端静态页面目录：项目根目录下的 frontend/（与 src 同级）
+FRONTEND_DIR = Path(__file__).resolve().parents[2] / "frontend"
 
 
 @asynccontextmanager
@@ -62,6 +69,12 @@ def create_app()->FastAPI:
     app.include_router(chat.router,prefix=settings.API_V1_PREFIX)
     app.include_router(conversations.router,prefix=settings.API_V1_PREFIX)
     app.include_router(admin.router,prefix=settings.API_V1_PREFIX)
+
+    #挂载前端页面，访问 http://127.0.0.1:8000/ 即可打开
+    #注意：必须放在所有 API 路由之后，否则 "/" 会把 /api/v1 一起吃掉
+    if FRONTEND_DIR.is_dir():
+        app.mount("/", StaticFiles(directory=str(FRONTEND_DIR), html=True), name="frontend")
+
     return app
 
 app = create_app()

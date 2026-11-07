@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>知问 EduQuery · 高校知识库问答</title>
+<link rel="stylesheet" href="assets/theme.css" />
+</head>
+<body>
+
+<div id="toast-host" class="toast-host" aria-live="polite"></div>
+
+<!-- ========== 登录 / 注册 ========== -->
+<main id="view-auth" class="auth-view" hidden>
+  <section class="auth-card">
+    <aside class="auth-brand">
+      <div class="brand">
+        <div class="brand-mark">知</div>
+        <div>
+          <div class="brand-name">知问</div>
+          <div class="brand-sub">EduQuery</div>
+        </div>
+      </div>
+      <h1 class="auth-title">校园里的每个问题<br />都有出处</h1>
+      <p class="auth-desc">
+        基于检索增强生成的高校知识库问答系统。答案只来自校内规章、通知与培养方案，
+        每条结论都能回溯到原文。
+      </p>
+      <ul class="auth-points">
+        <li><span class="dot"></span>混合检索：向量召回 + 关键词召回 + 重排</li>
+        <li><span class="dot"></span>答案带编号引用，可点击溯源</li>
+        <li><span class="dot"></span>多轮会话，记住你问过什么</li>
+      </ul>
+      <div class="auth-foot">
+        <span id="health-dot" class="health-dot"></span>
+        <span id="health-text">正在检测后端服务…</span>
+      </div>
+    </aside>
+
+    <div class="auth-panel">
+      <div class="tabs" role="tablist" aria-label="账号类型">
+        <button class="tab is-active" role="tab" data-tab="student-login">学生登录</button>
+        <button class="tab" role="tab" data-tab="student-register">注册</button>
+        <button class="tab" role="tab" data-tab="admin-login">管理员</button>
+      </div>
+
+      <form id="form-student-login" class="auth-form" data-panel="student-login" novalidate>
+        <label class="field">
+          <span class="field-label">学号</span>
+          <input name="student_no" type="text" autocomplete="username" placeholder="请输入学号" required />
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required />
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">登录</button>
+        <p class="form-note">还没有账号？<a href="#" data-goto-tab="student-register">用学号注册</a></p>
+      </form>
+
+      <form id="form-student-register" class="auth-form" data-panel="student-register" hidden novalidate>
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">学号</span>
+            <input name="student_no" type="text" autocomplete="username" placeholder="4–32 位" required />
+          </label>
+          <label class="field">
+            <span class="field-label">昵称</span>
+            <input name="nickname" type="text" placeholder="选填" />
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">专业</span>
+          <input name="major" type="text" placeholder="选填，如 计算机科学与技术" />
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <input name="password" type="password" autocomplete="new-password" placeholder="6–64 位" required />
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">创建账号</button>
+        <p class="form-note">注册成功后会自动登录。</p>
+      </form>
+
+      <form id="form-admin-login" class="auth-form" data-panel="admin-login" hidden novalidate>
+        <label class="field">
+          <span class="field-label">管理员账号</span>
+          <input name="username" type="text" autocomplete="username" placeholder="请输入管理员账号" required />
+        </label>
+        <label class="field">
+          <span class="field-label">密码</span>
+          <input name="password" type="password" autocomplete="current-password" placeholder="请输入密码" required />
+        </label>
+        <button class="btn btn-primary btn-block" type="submit">进入管理后台</button>
+        <p class="form-note">管理员账号用于维护知识库文档。</p>
+      </form>
+    </div>
+  </section>
+</main>
+
+<!-- ========== 学生端 ========== -->
+<div id="view-chat" class="app-shell" hidden>
+  <aside class="sidebar">
+    <div class="sidebar-head">
+      <div class="brand">
+        <div class="brand-mark">知</div>
+        <div>
+          <div class="brand-name">知问</div>
+          <div class="brand-sub">EduQuery</div>
+        </div>
+      </div>
+    </div>
+
+    <button id="btn-new-conv" class="btn btn-primary btn-block" type="button">
+      <span class="plus">＋</span> 新建对话
+    </button>
+
+    <div class="conv-scroll">
+      <nav id="conv-list" class="conv-list" aria-label="会话列表"></nav>
+    </div>
+
+    <div class="sidebar-foot">
+      <div class="user-card">
+        <div class="avatar avatar-sm" id="user-avatar">学</div>
+        <div class="user-meta">
+          <div class="user-name" id="user-name">—</div>
+          <div class="user-sub" id="user-sub">—</div>
+        </div>
+      </div>
+      <div class="foot-actions">
+        <button id="btn-admin-entry" class="btn btn-ghost btn-sm" type="button">知识库管理</button>
+        <button id="btn-logout" class="btn btn-ghost btn-sm" type="button">退出</button>
+      </div>
+    </div>
+  </aside>
+
+  <section class="chat-main">
+    <header class="chat-head">
+      <div class="chat-head-title">
+        <h1 id="conv-title">新的对话</h1>
+        <p id="conv-meta">提问后答案会标注参考来源</p>
+      </div>
+      <div class="chat-head-actions">
+        <span class="chip" id="conn-chip"><span class="health-dot"></span>已连接</span>
+        <button id="btn-del-conv" class="btn btn-ghost btn-sm" type="button" hidden>删除会话</button>
+      </div>
+    </header>
+
+    <div id="messages" class="messages" aria-live="polite"></div>
+
+    <div class="composer-wrap">
+      <form id="composer" class="composer">
+        <textarea id="question" rows="1" placeholder="问问校内规章、通知、培养方案…" aria-label="输入问题"></textarea>
+        <div class="composer-bar">
+          <span class="hint">Enter 发送 · Shift + Enter 换行</span>
+          <div class="composer-btns">
+            <button id="btn-stop" class="btn btn-ghost btn-sm" type="button" hidden>停止生成</button>
+            <button id="btn-send" class="btn btn-primary btn-sm" type="submit">发送</button>
+          </div>
+        </div>
+      </form>
+      <p class="composer-tip">回答由大模型基于知识库文档生成，重要事项请以原文为准。</p>
+    </div>
+  </section>
+</div>
+
+<!-- ========== 管理端 ========== -->
+<div id="view-admin" class="admin-shell" hidden>
+  <header class="admin-top">
+    <div class="brand">
+      <div class="brand-mark">知</div>
+      <div>
+        <div class="brand-name">知问 · 知识库管理</div>
+        <div class="brand-sub">EduQuery Console</div>
+      </div>
+    </div>
+    <div class="admin-top-actions">
+      <span class="chip chip-muted" id="admin-who">—</span>
+      <button id="btn-to-chat" class="btn btn-ghost btn-sm" type="button">返回问答</button>
+      <button id="btn-admin-logout" class="btn btn-ghost btn-sm" type="button">退出</button>
+    </div>
+  </header>
+
+  <!-- 管理员登录闸门 -->
+  <div id="admin-gate" class="admin-gate" hidden>
+    <form id="form-admin-gate" class="gate-card" novalidate>
+      <h2>需要管理员身份</h2>
+      <p class="form-note">知识库文档的增删改需要管理员账号登录。</p>
+      <label class="field">
+        <span class="field-label">管理员账号</span>
+        <input name="username" type="text" autocomplete="username" required />
+      </label>
+      <label class="field">
+        <span class="field-label">密码</span>
+        <input name="password" type="password" autocomplete="current-password" required />
+      </label>
+      <button class="btn btn-primary btn-block" type="submit">登录</button>
+    </form>
+  </div>
+
+  <main id="admin-console" class="admin-main" hidden>
+    <section class="stat-grid">
+      <article class="stat-card">
+        <div class="stat-label">文档总数</div>
+        <div class="stat-value" id="stat-total">—</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">已就绪</div>
+        <div class="stat-value stat-ok" id="stat-ready">—</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">处理中</div>
+        <div class="stat-value stat-warn" id="stat-processing">—</div>
+      </article>
+      <article class="stat-card">
+        <div class="stat-label">失败</div>
+        <div class="stat-value stat-err" id="stat-failed">—</div>
+      </article>
+    </section>
+
+    <section class="ingest-grid">
+      <article class="card">
+        <header class="card-head">
+          <h2>上传文档</h2>
+          <p>支持 pdf / docx / txt / md，单个不超过 20 MB</p>
+        </header>
+        <form id="form-upload" class="stack" novalidate>
+          <label class="dropzone" id="dropzone">
+            <input type="file" id="file-input" accept=".pdf,.docx,.txt,.md,.markdown" hidden />
+            <span class="dropzone-icon">↥</span>
+            <span class="dropzone-text" id="dropzone-text">点击选择文件，或拖拽到这里</span>
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">标题</span>
+              <input name="title" type="text" placeholder="选填，默认取文件名" />
+            </label>
+            <label class="field">
+              <span class="field-label">分类</span>
+              <input name="category" type="text" placeholder="如 规章 / 通知" />
+            </label>
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">上传并入库</button>
+        </form>
+        <div class="result" id="upload-result" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <h2>网页入库</h2>
+          <p>抓取单个网页正文后切分入库</p>
+        </header>
+        <form id="form-url" class="stack" novalidate>
+          <label class="field">
+            <span class="field-label">网页地址</span>
+            <input name="url" type="url" placeholder="https://www.example.edu.cn/notice/123" required />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">分类</span>
+              <input name="category" type="text" placeholder="选填" />
+            </label>
+            <label class="check">
+              <input name="force" type="checkbox" />
+              <span>已入库也强制重建</span>
+            </label>
+          </div>
+          <button class="btn btn-primary btn-block" type="submit">抓取并入库</button>
+        </form>
+        <div class="result" id="url-result" hidden></div>
+      </article>
+
+      <article class="card">
+        <header class="card-head">
+          <h2>栏目批量抓取</h2>
+          <p>从栏目列表页发现文章，后台逐篇入库</p>
+        </header>
+        <form id="form-crawl" class="stack" novalidate>
+          <label class="field">
+            <span class="field-label">栏目列表页地址</span>
+            <input name="list_url" type="url" placeholder="https://www.example.edu.cn/news" required />
+          </label>
+          <div class="field-row">
+            <label class="field">
+              <span class="field-label">最多抓取篇数</span>
+              <input name="limit" type="number" min="1" max="30" value="20" />
+            </label>
+            <label class="field">
+              <span class="field-label">统一分类</span>
+              <input name="category" type="text" placeholder="选填" />
+            </label>
+          </div>
+          <label class="check">
+            <input name="force" type="checkbox" />
+            <span>已入库也强制重建</span>
+          </label>
+          <button class="btn btn-primary btn-block" type="submit">提交抓取任务</button>
+        </form>
+        <div class="result" id="crawl-result" hidden></div>
+      </article>
+    </section>
+
+    <section class="card docs-card">
+      <header class="docs-head">
+        <div>
+          <h2>知识库文档</h2>
+          <p id="docs-summary">—</p>
+        </div>
+        <div class="docs-filters">
+          <select id="filter-status" class="select" aria-label="按状态筛选">
+            <option value="">全部状态</option>
+            <option value="pending">排队中</option>
+            <option value="processing">处理中</option>
+            <option value="ready">已就绪</option>
+            <option value="failed">失败</option>
+          </select>
+          <input id="filter-category" class="input" type="text" placeholder="按分类筛选" aria-label="按分类筛选" />
+          <button id="btn-refresh-docs" class="btn btn-ghost btn-sm" type="button">刷新</button>
+        </div>
+      </header>
+
+      <div class="table-wrap">
+        <table class="doc-table">
+          <thead>
+            <tr>
+              <th>文档</th>
+              <th>分类</th>
+              <th>来源</th>
+              <th>状态</th>
+              <th class="num">切片</th>
+              <th>更新时间</th>
+              <th class="num">操作</th>
+            </tr>
+          </thead>
+          <tbody id="doc-tbody"></tbody>
+        </table>
+        <div id="docs-empty" class="empty-row" hidden>还没有文档，先上传一份试试</div>
+      </div>
+
+      <footer class="pager">
+        <span id="pager-info">—</span>
+        <div class="pager-btns">
+          <button id="btn-prev" class="btn btn-ghost btn-sm" type="button">上一页</button>
+          <button id="btn-next" class="btn btn-ghost btn-sm" type="button">下一页</button>
+        </div>
+      </footer>
+    </section>
+  </main>
+</div>
+
+<noscript>
+  <p style="padding:40px;text-align:center">这个页面需要启用 JavaScript 才能使用。</p>
+</noscript>
+
+<script src="assets/app.js"></script>
+</body>
+</html>
